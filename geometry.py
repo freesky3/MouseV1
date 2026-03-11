@@ -52,14 +52,17 @@ class SheetGeometry:
         return np.sqrt(dist_2d_sq + z_diff**2) # shape: (N1, N2)
 
 class L4(SheetGeometry):
-    def __init__(self, n_side, region_size, z_pos, pT_X, pU_X, Theta):
+    def __init__(self, n_side, region_size, z_pos, pT_X, pU_X, Theta, all_tuned=False):
         super().__init__(n_side, region_size, z_pos)
-        self.neurons = self._populate_neurons(pT_X, pU_X, Theta)
+        self.neurons = self._populate_neurons(pT_X, pU_X, Theta, all_tuned)
     
 
-    def _populate_neurons(self, pT_X, pU_X, Theta):
+    def _populate_neurons(self, pT_X, pU_X, Theta, all_tuned):
         types = np.full(self.N, 'X')
-        tunings = np.random.choice(['T', 'U'], size=self.N, p=[pT_X, pU_X])
+        if all_tuned:
+            tunings = np.full(self.N, 'T')
+        else:
+            tunings = np.random.choice(['T', 'U'], size=self.N, p=[pT_X, pU_X])
         pref_dirs = np.full(self.N, None, dtype=object)
         is_T = (tunings == 'T')
         pref_dirs[is_T] = np.random.choice(Theta, size=np.sum(is_T))
@@ -73,12 +76,24 @@ class L4(SheetGeometry):
         return np.array(neuron_list)
 
 class L2_3(SheetGeometry):
-    def __init__(self, n_side, region_size, z_pos, pE, pI):
+    def __init__(self, n_side, region_size, z_pos, pE, pI, random_I):
         super().__init__(n_side, region_size, z_pos)
-        self.neurons = self._populate_neurons(pE, pI)
+        self.neurons = self._populate_neurons(pE, pI, random_I)
     
-    def _populate_neurons(self, pE, pI):
-        types = np.random.choice(['E', 'I'], size=self.N, p=[pE, pI])
+    def _populate_neurons(self, pE, pI, random_I):
+        if random_I:
+            types = np.random.choice(['E', 'I'], size=self.N, p=[pE, pI])
+        else:
+            # 均匀分布模式：在 2D 网格上行列都均匀放置 I 神经元
+            N_I = int(round(pI * self.N))
+            n_I_side = int(round(np.sqrt(N_I)))  # I 神经元子网格的边长
+            types = np.full(self.N, 'E', dtype='<U1')
+            # 在行和列方向分别等间距选取索引
+            row_indices = np.round(np.linspace(0, self.n_side - 1, n_I_side, endpoint=False)).astype(int)
+            col_indices = np.round(np.linspace(0, self.n_side - 1, n_I_side, endpoint=False)).astype(int)
+            for r in row_indices:
+                for c in col_indices:
+                    types[r * self.n_side + c] = 'I'
         tunings = np.empty(self.N, dtype=object)
         
 
@@ -162,6 +177,12 @@ def visualize_network(l4, l2_3):
     ax.set_zticks([l4.z_pos, l2_3.z_pos])
     ax.set_zticklabels(['L4', 'L2/3'])
     
+    # 强制设置坐标轴范围，防止因某类神经元（如 Untuned 为空）导致自动缩放异常，使图像变狭小
+    half_size = l4.region_size / 2.0
+    ax.set_xlim(-half_size, half_size)
+    ax.set_ylim(-half_size, half_size)
+    ax.set_zlim(l4.z_pos - 0.1, l2_3.z_pos + 0.1)
+    
     # 强制设置 3D 框的比例
     ax.set_box_aspect((1, 1, 0.4)) 
     
@@ -195,17 +216,19 @@ if __name__ == "__main__":
         "L4_region_size": 1,
         "L2_3_region_size": 1,
         "L4_z_pos": 0,
-        "L2_3_z_pos": 0.1,
+        "L2_3_z_pos": 0.4,
         "pT_X": 0.5714,
         "pU_X": 0.4286,
         "Theta": np.linspace(0, np.pi, 16, endpoint=False), 
         "pE": 0.8475,
         "pI": 0.1525,
         "p_EE": 0.1,
+        "random_I": False,
+        "all_tuned": True,
     }
     exp_data = ExperimentalData(config["L4_n_side"]**2, config["p_EE"])
-    l4 = L4(n_side=config["L4_n_side"], region_size=config["L4_region_size"], z_pos=config["L4_z_pos"], pT_X=config["pT_X"], pU_X=config["pU_X"], Theta=config["Theta"])
-    l2_3 = L2_3(n_side=exp_data.L2_3_n_side, region_size=config["L2_3_region_size"], z_pos=config["L2_3_z_pos"], pE=config["pE"], pI=config["pI"])
+    l4 = L4(n_side=config["L4_n_side"], region_size=config["L4_region_size"], z_pos=config["L4_z_pos"], pT_X=config["pT_X"], pU_X=config["pU_X"], Theta=config["Theta"], all_tuned=config["all_tuned"])
+    l2_3 = L2_3(n_side=exp_data.L2_3_n_side, region_size=config["L2_3_region_size"], z_pos=config["L2_3_z_pos"], pE=config["pE"], pI=config["pI"], random_I=config["random_I"])
     visualize_network(l4, l2_3)
     print(f"L4 neurons: {config['L4_n_side']}**2, L2/3 neurons: {exp_data.L2_3_n_side}**2")
     print(f"Ratio of L2/3 over L4: {exp_data.L2_3_n_side**2 / config['L4_n_side']**2}")
