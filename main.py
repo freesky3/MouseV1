@@ -16,7 +16,7 @@ from src.analysis.distance import plot_spatial_metrics_with_surrogates
 @app.command()
 def main(
 ): 
-    dir = "output/simulation/260423_215418_L4n40_g1.1"
+    dir = "output/simulation/260423_223417_L4n40_g1.1"
     with open(f"{dir}/metadata.json") as f:
         metadata = json.load(f)
     
